@@ -73,6 +73,6 @@ Také sleduje, nedošlo-li k opakování pozice nebo dvojímu pasování za sebo
 
 ## GameView
 
-Pohled -- grafická realizace programu v Tkinteru, která předává uživatelské vstupy kontroleru.
+Pohled – grafická realizace programu v Tkinteru, která předává uživatelské vstupy kontroleru.
 Vykreslí hlavní okno aplikace s objektem Goban, počty zajatců, ovládacími tlačítky
 a instancemi SizeMenu a ModeMenu.
