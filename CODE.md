@@ -34,11 +34,11 @@ Funkce, která vytvoří prázdnou desku daných rozměrů. Prvky desky jsou obj
 
 ## find_string
 
-Funkce, která na na zadané desce k danému bodu vrátí jeho skupinu.
+Funkce, která na na zadané desce k danému kamenu vrátí jeho skupinu.
 
 ## Board
 
-Třída stavů desky během hry. Obsahuje informaci o tom, jak jsou rozloženy kameny,
+Třída stavů desky během hry. Obsahuje informaci o tom, jak jsou rozloženy kameny (objekty Point),
 kde se nachází ko a jestli předchozí tah byl pas.
 Umožňuje provádění tahů (resp. testování jejich legality).
 
