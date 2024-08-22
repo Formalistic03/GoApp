@@ -3,6 +3,7 @@
 Program nepoužívá žádné externí knihovny;
 na vykreslování oken je použit modul Tkinter,
 jehož vzhled závisí na operačním systému.
+Celý se nachází v souboru `goapp.py`.
 
 Je užita jednoduchá MCV architektura, tedy rozdělení programu na části
 model hry, kontrolor (controller) a pohled (View); každá je samostatnou třídou.
