@@ -26,7 +26,7 @@ odvolání akce (`Undo`) a navrácení odvolaného stavu (`Redo`).
 
 Parametry desky se nastavují v postranním menu;
 je možné upravit počet řádků a sloupců desky a velikost políček.
-Je-li zaškrtnuté tlačítko `Square`, počet sloupců je automaticky roven počtu sloupců.
+Je-li zaškrtnuté tlačítko `Square`, počet sloupců je automaticky roven počtu řádků.
 Tlačítko `Resize` změní velikost zobrazení desky.
 Tlačítko `New Board` vytvoří po ujištění novou desku dle zadaných parametrů;
 tuto akci nelze odvolat.
