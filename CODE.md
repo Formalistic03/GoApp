@@ -35,7 +35,7 @@ Funkce, která vytvoří prázdnou desku daných rozměrů. Prvky desky jsou obj
 
 ## find_string
 
-Funkce, která na na zadané desce k danému kamenu vrátí jeho skupinu.
+Funkce, která na zadané desce k danému kamenu vrátí jeho skupinu.
 
 ## Board
 
