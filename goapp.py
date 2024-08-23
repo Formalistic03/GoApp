@@ -58,25 +58,30 @@ def create_grid(rows: int, columns: int) -> list[list[Point]]:
 
 def find_string(grid: list[list[Point]], i: int, j: int) -> String:
     """Determine the string of the point (given by coordinates) on the given grid."""
-    string = String((i, j))
-    point = grid[i][j]
-    colour = point.colour
-
+    colour = grid[i][j].colour
+    
     # The string is found recursively
-    # After connecting a new point, it is temporarily removed from the grid
-    point.colour = None
-    for a, b in point.adjacent:
-        neighbour = grid[a][b]
-        if neighbour.colour == EMPTY:
-            string.liberties = True
-        elif neighbour.colour == colour and (a, b) not in string.points:
-            neighbour_string = find_string(grid, a, b)
-            string.points |= neighbour_string.points
-            string.liberties |= neighbour_string.liberties
-    point.colour = colour
-        
-    return string
+    # After connecting a new point, it is no longer considered
+    def string_in_grid(a: int, b: int) -> String:
+        string = String((a, b))
+        point = grid[a][b]
+        point.colour = None
+        for c, d in point.adjacent:
+            neighbour = grid[c][d]
+            if neighbour.colour == EMPTY:
+                string.liberties = True
+            elif neighbour.colour == colour:
+                neighbour_string = string_in_grid(c, d)
+                string.points |= neighbour_string.points
+                string.liberties |= neighbour_string.liberties
+        return string
 
+    string = string_in_grid(i, j)
+    for a, b in string.points:
+        grid[a][b].colour = colour
+    
+    return string
+    
 
 class Board:
     """Board state during the game.
@@ -287,15 +292,15 @@ class SizeMenu(tk.Frame):
         Ask for confirmation.
         Display an error message if some of the parameters are left unspecified.
         """
-        if messagebox.askokcancel("New board", parent=self.view.root,
-                                  message="Create new board?"):
-            if (rows := self.sp_rows.get()) and (columns := self.sp_columns.get()):
-                size = self.sc_size.get()
-                if self.size_fits(size, int(rows), int(columns)):
+        if (rows := self.sp_rows.get()) and (columns := self.sp_columns.get()):
+            size = self.sc_size.get()
+            if self.size_fits(size, int(rows), int(columns)):
+                if messagebox.askokcancel("New board", parent=self.view.root,
+                                          message="Create new board?"):
                     self.view.new_board(size, int(rows), int(columns))
-            else:
-                messagebox.showerror("Error", parent=self.view.root,
-                                     message="Grid parameters not specified")
+        else:
+            messagebox.showerror("Error", parent=self.view.root,
+                                 message="Grid parameters not specified")
 
 
 class ModeMenu(tk.Frame):
@@ -613,7 +618,7 @@ class GameView:
 
     def placement(self, event):
         """Attempt to place (or delete) a stone where the user clicked on the goban."""
-        i, j = event.y//self.goban.size, event.x//self.goban.size
+        i, j = (event.y - 5)//self.goban.size, (event.x - 5)//self.goban.size
         if i >= 0 and i < self.goban.m and j >= 0 and j < self.goban.n:
             self.controller.placement(i, j)
 
