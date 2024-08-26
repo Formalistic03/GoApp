@@ -21,6 +21,8 @@ a tlačítko `Reset prisoners`, které je znuluje; tuto akci nelze odvolat.
 
 Pod deskou se nachází tlačíka na pasování (`Pass`),
 odvolání akce (`Undo`) a navrácení odvolaného stavu (`Redo`).
+Tytéž akce je rovněž možné provést po řadě stistknutím kláves
+`p`, `BackSpace` a `r`.
 
 #### Postranní menu
 
