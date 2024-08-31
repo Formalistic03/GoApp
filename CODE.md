@@ -43,7 +43,7 @@ Umožňuje nalézt bezpodmíněčně živé skupiny na desce.
 
 ## Board
 
-Třída stavů desky během hry.
+Třída stavů desky během hry. Pamatuje si již vyřešené pozice ve slovníku.
 
 Obsahuje informaci o tom, jak jsou rozloženy kameny (objekt `Grid`),
 kolik mají hráči zajatců, kde se nachází ko a kolik předchozích tahů bylo pasováno.
@@ -78,7 +78,7 @@ Menu pro nastavování komi a vyhodnocování pozice na desce jako třída.
 
 ## GameModel
 
-Vnitřní model hry, ve kterém jsou uloženy stavy desky (jako objekty Board).
+Vnitřní model hry, ve kterém jsou uloženy stavy desky (jako objekty `Board`).
 Umožňuje akce jako vytvoření nové desky, resetování počtu zajatců,
 umístění/odebrání kamene, pasování, odvolání akce a vrácení odvolání.
 
@@ -93,4 +93,4 @@ Také sleduje, nedošlo-li k opakování pozice nebo dvojímu pasování za sebo
 
 Pohled – grafická realizace programu v Tkinteru, která předává uživatelské vstupy kontroleru.
 Vykreslí hlavní okno aplikace s objektem Goban, počty zajatců, ovládacími tlačítky
-a instancemi SizeMenu, ModeMenu a ScoreMenu.
+a instancemi `SizeMenu`, `ModeMenu` a `ScoreMenu`.
