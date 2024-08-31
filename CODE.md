@@ -1,22 +1,14 @@
 # Technický popis
 
-Program nepoužívá žádné externí knihovny;
-na vykreslování oken je použit modul `Tkinter`,
-jehož vzhled závisí na operačním systému.
-Celý se nachází v souboru `goapp.py`.
+Program nepoužívá žádné externí knihovny; na vykreslování oken je použit modul `Tkinter`, jehož vzhled závisí na operačním systému. Celý se nachází v souboru `goapp.py`.
 
-Je užita jednoduchá MCV architektura, tedy rozdělení programu na části
-model hry, kontrolor (controller) a pohled (view); každá je samostatnou třídou.
-Dále je v kódu definováno několik tříd a funkcí, které jsou popsány níže.
-Podrobnější dokumentace všech metod a atributů se nachází v programu (v angličtině).
+Je užita jednoduchá MCV architektura, tedy rozdělení programu na části model hry, kontrolor (controller) a pohled (view); každá je samostatnou třídou. Dále je v kódu definováno několik tříd a funkcí, které jsou popsány níže. Podrobnější dokumentace všech metod a atributů se nachází v programu (v angličtině).
 
-Na konci se nachází hlavní část spouštící program
-s výchozí deskou 9x9 o velikosti políčka 36 v módu `Play` s komi 6,5.
+Na konci se nachází hlavní část spouštící program s výchozí deskou 9x9 o velikosti políčka 36 v módu `Play` s komi 6,5.
 
 ## GoError
 
-Třída výjimek pro účely programu. Má podtřídu
-`PlacementError`, která signalizuje nelegální či nemožné položení/vzetí kamene.
+Třída výjimek pro účely programu. Má podtřídu `PlacementError`, která signalizuje nelegální či nemožné položení/vzetí kamene.
 
 ## Point
 
