@@ -1,6 +1,6 @@
 # GoApp documentation (in Czech)
 
-Jednoduchá aplikace pro simulaci deskové hry go. Umožňuje jak běžnou hru dvou hráčů proti sobě, tak vytvoření zkoumané pozice a pokus o její následnou analýzu. Hraje se podle [japonských pravidel](https://www.cs.cmu.edu/~wjh/go/rules/Japanese.html).
+A simple application for simulating the board game of go. Enables normal game of two players against each other as well as creating any given position and attempting its analysis. The [Japanese Rules](https://www.cs.cmu.edu/~wjh/go/rules/Japanese.html) are used.
 
 ## Spuštění
 
