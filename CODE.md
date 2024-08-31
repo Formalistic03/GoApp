@@ -4,7 +4,7 @@ Program nepoužívá žádné externí knihovny; na vykreslování oken je použ
 
 Je užita jednoduchá MCV architektura, tedy rozdělení programu na části model hry, kontrolor (controller) a pohled (view); každá je samostatnou třídou. Dále je v kódu definováno několik tříd a funkcí, které jsou popsány níže. Podrobnější dokumentace všech metod a atributů se nachází v programu (v angličtině).
 
-Na konci se nachází hlavní část spouštící program s výchozí deskou 9x9 o velikosti políčka 36 v módu `Play` s komi 6,5.
+Na konci se nachází hlavní část spouštící program s výchozí deskou 9×9 o velikosti políčka 36 v módu `Play` s komi 6,5.
 
 ## GoError
 
