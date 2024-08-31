@@ -11,7 +11,7 @@ Dále je v kódu definováno několik tříd a funkcí, které jsou popsány ní
 Podrobnější dokumentace všech metod a atributů se nachází v programu (v angličtině).
 
 Na konci se nachází hlavní část spouštící program
-s výchozí deskou 9x9 o velikosti políčka 36 v módu `Play`.
+s výchozí deskou 9x9 o velikosti políčka 36 v módu `Play` s komi 6,5.
 
 ## GoError
 
