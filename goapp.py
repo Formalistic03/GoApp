@@ -399,7 +399,7 @@ class Board:
                     new_board.build_tree(-player)
             self.children[None] = new_board
 
-    def minmax(self, player: int, history: list["Board"], komi: float) -> list:
+    def minmax(self, player: int, history: list["Board"], komi: float):
         """Recursively find the optimal moves from the given positions."""
         if not self.children:
             score = self.grade()
