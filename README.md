@@ -46,7 +46,7 @@ Při hledání optimálního tahu jsou zkoušeny všechny možné tahy mimo úze
 
 ## Stručná pravidla Go
 
-_Go_ je hra na obdélníkové desce s vyznačenou mřížkou. Dva hráči, černý a bílý, se střídají v tazích; každý tah buďto položí kámen své barvy na prázdný průsečík, nebo pasují bez akce. Začíná černý.
+_Go_ je hra na desce s vyznačenou mřížkou (standardními rozměry jsou 9×9, 13×13 a 19×19). Dva hráči, černý a bílý, se střídají v tazích; každý tah buďto položí kámen své barvy na prázdný průsečík, nebo pasují bez akce. Začíná černý.
 
 _Skupinou_ kamenů se rozumí maximální souvislá množina kamenů jedné barvy (kameny bereme za spojené, pokud leží na sousedních průsečících). _Svobodami_ skupiny se rozumí prázdné průsečíky sousedící s nějakým kamenem skupiny. Pro tah položením kamene platí následující:
 - Pokud po tahu hráče ztratí nějaká skupina protihráče všechny své svobody, jsou kameny této skupiny odstraněny z desky a daný hráč si je bere jako své zajatce.
