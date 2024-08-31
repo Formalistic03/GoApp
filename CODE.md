@@ -6,12 +6,12 @@ jehož vzhled závisí na operačním systému.
 Celý se nachází v souboru `goapp.py`.
 
 Je užita jednoduchá MCV architektura, tedy rozdělení programu na části
-model hry, kontrolor (controller) a pohled (View); každá je samostatnou třídou.
+model hry, kontrolor (controller) a pohled (view); každá je samostatnou třídou.
 Dále je v kódu definováno několik tříd a funkcí, které jsou popsány níže.
 Podrobnější dokumentace všech metod a atributů se nachází v programu (v angličtině).
 
 Na konci se nachází hlavní část spouštící program
-s výchozí deskou 9x9 o velikosti políčka 36 v módu Play.
+s výchozí deskou 9x9 o velikosti políčka 36 v módu `Play`.
 
 ## GoError
 
@@ -58,7 +58,7 @@ jestli nedošlo k opakování.
 ## Goban
 
 Podtřída třídy `Canvas` z modulu `Tkinter`, která slouží k vykreslování desky na obrazovku.
-Umožňuje měnit svou velikost a rozměry a vykreslit kameny, ko a území podle objektu Board,
+Umožňuje měnit svou velikost a rozměry a vykreslit kameny, ko a území podle objektu `Board`,
 rovněž vykreslit návrhy na nejlepší tah.
 
 ## SizeMenu
