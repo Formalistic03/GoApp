@@ -57,6 +57,8 @@ Hra končí dvěma pasy za sebou. Poté je vyhodnocena pozice. Skupina se nazýv
 
 Během hry se může stát, že se na desce vyskytne _dlouhý cyklus_, tedy že se zopakuje pozice (daná rozložením kamenů), která se již naskytla[^2]. V takovém případě se spočte, který hráč od posledního výskytu pozice získal větší počet zajatců; hra předčasně končí a tento hráč vyhrává. Pokud jsou mna tom hráči stejně, hra končí bez výsledku.
 
+Jako kompenzace výhody prvního hráče nebo jako handicap se hrává s tzv. _komi_; jedná se o hodnotu, která je při určování výsledku přičtena ke skóre bílého (při japonských pravidlech na standardních deskách 6,5).
+
 [^1]: Přesná definice života a území je složitější a závisí na zvolených pravidlech, pokud ji vůbec poskytují. Pro účely tohoto programu rozdíly nejsou tolik podstatné; poznamenejme snad jen, že není brána v potaz situace _seki_, kdy skupiny dvou hráčů žijí vzájemně tak, že ani jedna strana nedovede žít bezpodmíněčně či vzít druhou.
 
-[^2]: Rovněž co se dlouhých cyklů týče se různá pravidla liší. Při hraní je to v programu možno ignorovat.
+[^2]: Rovněž co se dlouhých cyklů týče se různá pravidla liší. Při hraní je to v programu možno ignorovat, při vyhodnocování se program uvedeným pravidlem řídí.
