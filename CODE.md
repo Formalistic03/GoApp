@@ -2,7 +2,9 @@
 
 Program nepoužívá žádné externí knihovny; na vykreslování oken je použit modul `Tkinter`, jehož vzhled závisí na operačním systému. Celý se nachází v souboru `goapp.py`.
 
-Je užita jednoduchá MCV architektura, tedy rozdělení programu na části model hry, kontrolor (controller) a pohled (view); každá je samostatnou třídou. Dále je v kódu definováno několik tříd a funkcí, které jsou popsány níže. Podrobnější dokumentace všech metod a atributů se nachází v programu (v angličtině).
+Je užita jednoduchá MCV architektura, tedy rozdělení programu na části model hry, kontrolor (controller) a pohled (view); každá je samostatnou třídou. Dále je v kódu definováno několik tříd, které jsou popsány níže. Podrobnější dokumentace všech metod a atributů se nachází v programu (v angličtině).
+
+Na počátku se nachází konstanty pro účely programu.
 
 Na konci se nachází hlavní část spouštící program s výchozí deskou 9×9 o velikosti políčka 36 v módu `Play` s komi 6,5.
 
@@ -16,23 +18,39 @@ Třída průsečíků desky, na něž lze pokládat kameny. Obsahuje informaci o
 
 ## String
 
-Třída souvislých skupin průsečíků (spojených podél linek desky; objekty `Point`). Buďto je maximální skupinou kamenů jehnoho hráče, nebo maximální oblastí ohraničenou jedním hráčem. Obsahuje informaci o tom, jaké má dané skupina svobody; může také zaznamenat, zda je naživu.
+Třída souvislých skupin průsečíků (spojených podél linek desky; objekty `Point`). Buďto je maximální skupinou kamenů jehnoho hráče, nebo maximální oblastí ohraničenou jedním hráčem. Obsahuje informaci o tom, jaké má dané skupina svobody; může také zaznamenat, zda je naživu a jaké má oči.
 
 ## Grid
 
-Třída rozložení kamenů na desce (objektů `Point` v matici). Umožňuje nalézt bezpodmíněčně živé skupiny na desce.
+Třída rozložení kamenů na desce (objektů `Point` v matici). Umožňuje nalézt bezpodmíněčně živé skupiny na desce (Využitím [Bensonova algoritmu](https://webdocs.cs.ualberta.ca/~games/go/seminar/2002/020717/benson.pdf)[^1]) a území obou hráčů.
+
+## Result
+
+Třída výsledků pro vyhledávání řešení pozice. Zaznamenává hodnotu, hloubku a dceřinná řešení pro každý optimální tah (tj. ve výsledku celý strom optimálních sekvenci).
 
 ## Board
 
-Třída stavů desky během hry. Pamatuje si již vyřešené pozice ve slovníku. Obsahuje informaci o tom, jak jsou rozloženy kameny (objekt `Grid`), kolik mají hráči zajatců, kde se nachází ko a kolik předchozích tahů bylo pasováno. Umožňuje provádění tahů (resp. testování jejich legality), podrobnější hledání živých skupin, vyhodnocení území hráčů a hledání optimálního tahu algoritmem minmaxu.
+Třída stavů desky během hry. Pamatuje si již vyřešené pozice ve slovníku. Obsahuje informaci o tom, jak jsou rozloženy kameny (objekt `Grid`), kolik mají hráči zajatců, kde se nachází ko a kolik předchozích tahů bylo pasováno; dále také může uchovávat území hráčů, nerozhodnutou oblast a dceřinné pozice (pro vyhledávání). Umožňuje provádění tahů (resp. testování jejich legality), podrobnější hledání živých skupin a hledání nejlepšího tahu.
 
-## test_repetition
+### Board.solve
+
+Metoda na hledání optimálního řešení. Definuje několik pomocných funkcí. Postup je z valné části přejatý z programu MIGOS[^2]. Je použit algoritmus minmaxu (implementovaného jako negamax) s iterativním prohlubováním a alfa-beta ořezáváním. Pro dané vyhledávání se udržuje slovník s prozatímně naleznými řešeními (transpoziční tabulka). Pro malé desky se v malé hloubce vyhledávají také symetrické pozice. Jsou implementovány heuristika killer tahů a heuristika historie. Desky jsou vyhodnocovány heusristickou funkci odměňující nadějnější tahy. Možné tahy jsou omezeny na tahy mimo rozhodnutá území, takže se na deskách průběžně hodnotí život; již takto vyhodnocené jsou ukládány v modelu. Pokud je území bepodmíněčné, běží vyhodnocování ve zkráceném režimu pro zrychlení (nezkouší se život přes miai).
+
+### Board.test_repetition
 
 Funkce, která obdrží historii stavů desky a vyhodnotí podle pravidla o dlouhém cyklu, jestli nedošlo k opakování.
 
+## GameModel
+
+Vnitřní model hry, ve kterém jsou uloženy stavy desky (jako objekty `Board`). Umožňuje akce jako vytvoření nové desky, resetování počtu zajatců, umístění/odebrání kamene, pasování, odvolání akce a vrácení odvolání. Testuje, jestli by mohlo dojít k opakování pozice. Uchovává již vyhodnocené desky. Také si pamatuje nalezená řešení desek.
+
+## GameController
+
+Kontroler, který zprostředkovává komunikaci mezi modelem a pohledem a provádí příslušné operace. Je schopný aktualizovat pohled podle stavu desky a zajatců, vyhodnocovat pozici na desce, nastavovat, jaký hráč je na tahu, a resetovat historii desek. Také sleduje, nedošlo-li k opakování pozice nebo dvojímu pasování za sebou.
+
 ## Goban
 
-Podtřída třídy `Canvas` z modulu `Tkinter`, která slouží k vykreslování desky na obrazovku. Umožňuje měnit svou velikost a rozměry a vykreslit kameny, ko a území podle objektu `Board`, rovněž vykreslit návrhy na nejlepší tah.
+Podtřída třídy `Canvas` z modulu `Tkinter`, která slouží k vykreslování desky na obrazovku. Umožňuje měnit svou velikost a rozměry a vykreslit kameny, ko a území podle objektu `Board`, rovněž po vyřešení vykreslit nejlepší tahy.
 
 ## SizeMenu
 
@@ -46,14 +64,9 @@ Menu pro nastavování hracího módu a způsobu pokládání kamenů jako tří
 
 Menu pro nastavování komi a vyhodnocování pozice na desce jako třída.
 
-## GameModel
-
-Vnitřní model hry, ve kterém jsou uloženy stavy desky (jako objekty `Board`). Umožňuje akce jako vytvoření nové desky, resetování počtu zajatců, umístění/odebrání kamene, pasování, odvolání akce a vrácení odvolání.
-
-## GameController
-
-Kontroler, který zprostředkovává komunikaci mezi modelem a pohledem a provádí příslušné operace. Je schopný aktualizovat pohled podle stavu desky a zajatců, vyhodnocovat pozici na desce, nastavovat, jaký hráč je na tahu, a resetovat historii desek. Také sleduje, nedošlo-li k opakování pozice nebo dvojímu pasování za sebou.
-
 ## GameView
 
 Pohled – grafická realizace programu v Tkinteru, která předává uživatelské vstupy kontroleru. Vykreslí hlavní okno aplikace s objektem Goban, počty zajatců, ovládacími tlačítky a instancemi `SizeMenu`, `ModeMenu` a `ScoreMenu`.
+
+ [^1]: BENSON, David B. Life in the game of Go. Information Sciences. 1976, vol. 10, no. 2, s. 17–29. ISSN 0020-0255.
+ [^2]: VAN DER WERF, Erik C. D.; VAN DEN HERIK, H. Jaap a UITERWIJK, Jos W. H. M. Solving Go on Small Boards. Journal of the International Computer Games Association. 2003, vol. 26, no. 2, s. 92–107.
