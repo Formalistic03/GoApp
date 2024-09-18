@@ -1,5 +1,8 @@
 import tkinter as tk
 from tkinter import messagebox
+from functools import total_ordering
+from itertools import product
+from math import inf, isinf
 
 # Constants for point occupation and alternation options
 EMPTY: int = 0    # Empty intersection, also deleting stones
@@ -7,7 +10,10 @@ BLACK: int = 1    # Black stone, also only Black plays
 WHITE: int = -BLACK    # White stone, also only White plays
 ALTERNATE: int = 2    # The players alternate placing stones
 
-MAX_UNDECIDED = 7    # Maximum number of undecided points when solving
+# Constants for restricting solving
+MAX_UNDECIDED = 12    # Maximum number of undecided points
+MAX_DEPTH = 50    # Maximum search depth
+MAX_COMPLEXITY = 10000000   # Maximum number of stored points when computing
 
 # Constants for graphic realisation
 MAX_LENGTH = 25    # Maximum dimension of the board
@@ -16,7 +22,6 @@ MAX_SIZE = 99    # Maximum tile size
 MAX_GOBAN_SIZE = 700    # Maximum size of the displayed goban
 MAX_PRISONERS = 999    # Maximum displayed number of prisoners
 MAX_KOMI = 99.5    # Maximum value of komi
-
 
 class GoError(Exception):
     """Exception class for handling Go-related errors."""
@@ -38,61 +43,160 @@ class Point:
         self.active: bool = True    # Whether the point was already processed;
                                     # for use in algorithms, as a mask
 
-    def _string_recursion(self, region: int) -> "String":
-        """Find the point's string (region) recursively and determine its liberties."""
+    def _string_recursion(self) -> "String":
+        """Find the point's string recursively and determine its liberties.
+
+        The string's points and liberties become inactive.
+        """
         string = String(self)
         self.active = False
         for neighbour in self.adjacent:
             if neighbour.active:
                 if neighbour.colour == EMPTY:
-                    string.liberties.add(neighbour)
-                if (region == EMPTY and neighbour.colour == self.colour or
-                    region != EMPTY and neighbour.colour in {EMPTY, -region}):
-                    neighbour_string = neighbour._string_recursion(region)
-                    string.points |= neighbour_string.points
-                    string.liberties |= neighbour_string.liberties
+                    neighbour.active = False
+                    string.liberties.append(neighbour)
+                if neighbour.colour == self.colour:
+                    neighbour_string = neighbour._string_recursion()
+                    string.points.extend(neighbour_string.points)
+                    string.liberties.extend(neighbour_string.liberties)
         return string
+
+    def _region_recursion(self, player: int) -> "String":
+        """Find the player-enclosed region containing the point recursively.
+
+        Its empty points are stored as liberties.
+        If the region is small (it has no internal empty intersections),
+        its alive attribute is set to True, else it is False.
+        If the point is occupied by the player, return None.
+        The region's points become inactive.
+        """
+        if self.colour == player:
+            return None
+        
+        region = String(self)
+        self.active = False
+        region.alive = True
+        for neighbour in self.adjacent:
+            if neighbour.active and neighbour.colour != player:
+                neighbour_region = neighbour._region_recursion(player)
+                region.points.extend(neighbour_region.points)
+                region.liberties.extend(neighbour_region.liberties)
+                region.alive &= neighbour_region.alive
+        if self.colour == EMPTY:
+            region.liberties.append(self)
+            if region.alive and player not in [n.colour for n in self.adjacent]:
+                region.alive = False
+        return region
     
     def find_string(self, region: int = EMPTY) -> "String":
         """Find the point's string (region).
 
         If the region option is EMPTY, find the string of intersections with the same colour.
-        If it is BLACK or WHITE, find the region enclosed by the player containing itself.
+        If it is BLACK or WHITE, find the region enclosed by the player containing the point,
+        but if the point is occupied by the player, return None.
         """
-        string = self._string_recursion(region)
-        if region != EMPTY and self.colour == EMPTY:
-            # The origin was not added as a liberty
-            string.liberties.add(self)
-        for point in string:
-            point.active = True
+        if region == EMPTY:
+            string = self._string_recursion()
+            for liberty in string.liberties:
+                liberty.active = True
+        if region != EMPTY:
+            string = self._region_recursion(region)
+        if string is not None:
+            for point in string:
+                point.active = True
         return string
 
-    def eye_recursion(self, player: int) -> "String":
+    def territory_recursion(self, player: int) -> "String":
         """Find the player-enclosed region and check whether it is territory.
 
         If it is, its alive attribute is set to True, else it is False or None.
+        The obviously alive strings of both players need to have been determined.
+        If the point is part of the player's living string, return None.
         The region's points become inactive.
         """
+        if self.colour == player and self.string.alive:
+            return None
+        
         region = String(self)
         self.active = False
-        region.alive = None
+        region.alive = None    # Unknown status
         for neighbour in self.adjacent:
             if neighbour.active:
                 if (region.alive is None and
                     neighbour.colour == player and neighbour.string.alive):
                     region.alive = True
-                if (neighbour.colour == -player and neighbour.string.alive or
-                    neighbour.colour == player and not neighbour.string.alive):
+                elif neighbour.colour == -player and neighbour.string.alive:
                     region.alive = False
-                if (neighbour.colour == EMPTY or
-                    neighbour.colour == -player and not neighbour.string.alive):
-                    neighbour_region = neighbour.eye_recursion(player)
-                    region.points |= neighbour_region.points
+                if neighbour.colour == EMPTY or not neighbour.string.alive:
+                    neighbour_region = neighbour.territory_recursion(player)
+                    region.points.extend(neighbour_region.points)
                     if region.alive is None:
                         region.alive = neighbour_region.alive
                     elif neighbour_region.alive is not None:
                         region.alive &= neighbour_region.alive
         return region
+
+    def isolated(self) -> bool:
+        """Whether the newly placed point cannot change life status of the player's strings.
+
+        If no point was placed, return None.
+        """
+        player = self.colour
+        if player == EMPTY:
+            return None
+        
+        # A lone locally dead stone
+        if player not in [n.colour for n in self.adjacent]:
+            vitals = 0    # The number of the stone's eyes
+            for neighbour in filter(lambda n: n.colour == EMPTY, self.adjacent):
+                if neighbour.string is None:
+                    region = neighbour.find_string(player)
+                    for point in region.liberties:
+                        point.string = region
+                    if len(region.liberties) == 1:
+                        vitals += 1
+            for neighbour in filter(lambda n: n.colour == EMPTY, self.adjacent):
+                if neighbour.string is not None:
+                    for point in region.liberties:
+                        point.string = None
+            if vitals < 2:
+                return True
+            return False
+        
+        # Simple string extension
+        self.colour = EMPTY
+        point = next(filter(lambda n: n.colour == player, self.adjacent))
+        string = point.find_string()
+        for p in string:
+            p.active = False
+        if any(n.active for n in self.adjacent if n.colour == player):
+            # Different strings were connected
+            for p in string:
+                p.active = True
+            self.colour = player
+            return False
+        self.colour = player
+        other_neighbours = [n for n in self.adjacent if n.colour != player]
+        isolated = True
+        if other_neighbours:
+            region = other_neighbours[0]._region_recursion(player)
+            # Whether no new small region was created
+            isolated = not (any(n.active for n in self.adjacent if n.colour != player) or
+                            region.alive)
+            for p in region:
+                p.active = True
+        for p in string:
+            p.active = True
+        return isolated
+
+    def dame(self) -> bool:
+        """Test whether the point is empty and adjacent to both players' alive strings."""
+        if self.colour != EMPTY:
+            return False
+        stone_neighbours = [n for n in self.adjacent if n.colour != EMPTY]
+        return (BLACK in [n.colour for n in stone_neighbours] and
+                WHITE in [n.colour for n in stone_neighbours])
+
 
 class String:
     """Set of points connected by adjacency.
@@ -103,12 +207,13 @@ class String:
     """
     
     def __init__(self, point):
-        self.points: set["Point"] = {point}    # The string's points
-        self.liberties: set["Point"] = set()    # The string's liberties
-                                                # or region's empty points
-        self.vitals: set["String"] = set()    # The string's eyes (as regions)
-                                              # or region's neighbouring alive strings
+        self.points: list["Point"] = [point]    # The string's points
+        self.liberties: list["Point"] = []    # The string's liberties
+                                              # or region's empty points
+        self.vitals: list["String"] = []    # The string's eyes (as regions)
+                                            # or the region's enclosing strings
         self.alive: bool = False    # The string's life status
+                                    # or whether the region is small / territory
 
     def __iter__(self):
         """Iterate over the string's points."""
@@ -118,6 +223,13 @@ class String:
         """Return the number of the string's points."""
         return len(self.points)
 
+    def vital(self, string, player):
+        """Check whether the region is an eye of the player's string."""
+        for liberty in self.liberties:
+            if string not in [p.string for p in liberty.adjacent if p.colour == player]:
+                return False
+        return True
+
 class Grid(list):
     """The stone layout as a matrix of points."""
 
@@ -126,11 +238,10 @@ class Grid(list):
         self.n: int = columns    # The grid's dimensions
         
         list.__init__(self, [[Point(r, c) for c in range(columns)] for r in range(rows)])
-        for i in range(rows):
-            for j in range(columns):
-                for a, b in [(i-1, j), (i, j-1), (i+1, j), (i, j+1)]:
-                    if a not in {-1, rows} and b not in {-1, columns}:
-                        self[i][j].adjacent.append(self[a][b])
+        for i, j in product(range(rows), range(columns)):
+            for a, b in [(i-1, j), (i, j-1), (i+1, j), (i, j+1)]:
+                if a not in {-1, rows} and b not in {-1, columns}:
+                    self[i][j].adjacent.append(self[a][b])
 
     def __iter__(self):
         """Iterate over the grid's points."""
@@ -139,99 +250,210 @@ class Grid(list):
 
     def __eq__(self, other) -> bool:
         """Test the equality of stone layouts."""
+        if not isinstance(other, Grid):
+            return NotImplemented
         return ([point.colour for point in self] == [point.colour for point in other])
 
-    def copy(self) -> "Grid":
-        """Create a copy of the grid."""
+    def copy(self, symmetry: tuple[tuple, int] = ((False, False, False), 1)) -> "Grid":
+        """Create a copy of the grid.
+
+        If the symmetric option is non-default, apply the symmetry.
+        """
         copy = Grid(self.m, self.n)
-        for i in range(self.m):
-            for j in range(self.n):
-                copy[i][j].colour = self[i][j].colour
+        mapping, switch = symmetry
+        reflect_i, reflect_j, swap_ij = mapping
+        for i, j in product(range(self.m), range(self.n)):
+            k = i if not reflect_i else self.m - i - 1
+            l = j if not reflect_j else self.n - j - 1
+            if swap_ij:
+                k, l = l, k
+            copy[k][l].colour = switch*self[i][j].colour
         return copy
+        
                         
-    def uncapturable(self, player: int):
+    def uncapturable(self, player: int) -> tuple[list["String"]]:
         """For the player's unconditionally alive strings, set their status to alive.
 
+        Return a list of the player's eyes and the remaining strings with more liberties.
         Benson's algorithm is implemented.
         Retain information about stone strings.
         """
-        strings = set()
+        strings, eyes = [], []
         for point in self:
             if point.string is None:
                 if point.colour == player:
                     string = point.find_string()
-                    strings.add(string)
+                    string.alive = True
+                    strings.append(string)
                     for p in string:
                         p.string = string
                 elif point.colour == EMPTY:
                     region = point.find_string(player)
-                    for p in region:
-                        if p.colour == EMPTY:
-                            # Already determined strings of the other player are preserved;
-                            # only the region's empty points need to be considered
-                            p.string = region
+                    for l in region.liberties:
+                        # Already determined strings of the other player are preserved;
+                        # only the region's empty points need to be considered
+                        l.string = region
+                    if region.alive:
+                        eyes.append(region)
         for string in strings:
             for liberty in string.liberties:
                 if liberty.active:
                     region = liberty.string
-                    for l in region.liberties:
-                        l.active = False
-                    if region.liberties <= string.liberties:
-                        string.vitals.add(region)
-                        region.vitals.add(string)
+                    if region.alive:
+                        for l in region.liberties:
+                            l.active = False
+                        if region.vital(string, player):
+                            string.vitals.append(region)
+                        region.vitals.append(string)
             for liberty in string.liberties:
                 if not liberty.active:
                     for l in liberty.string.liberties:
                         l.active = True
-                
+
         end = False
         while not end:
             end = True
-            new_strings = strings.copy()
-            for string in strings:
-                if len(string.vitals) < 2:
+            for string in filter(lambda s: s.alive, strings):
+                if [r.alive for r in string.vitals].count(True) < 2:
                     # Not uncapturable
                     end = False
-                    new_strings.remove(string)
+                    string.alive = False
                     for region in string.vitals:
-                        region.vitals.remove(string)
-                        for vital in region.vitals:
-                            vital.vitals.remove(region)
-            strings = new_strings
+                        region.alive = False
+        for eye in filter(lambda e: e.alive, eyes):
+            if not all(s.alive for s in eye.vitals):
+                eye.alive = False
             
+        for point in filter(lambda p: p.colour == EMPTY, self):
+            point.string = None
+
+        return ([s for s in strings if not s.alive and len(s.liberties) > 1],
+                [e for e in eyes if e.alive])
+
+    def find_territory(self, player) -> list["Point"]:
+        """Return a list of the points which are territory of the player.
+
+        The obvisouly alive strings need to have been determined.
+        Assumes that other strings of the player are dead unless they are in their territory.
+        Retain stone strings.
+        """
+        
+        territory = []
         for point in self:
-            if point.colour == EMPTY:
-                point.string = None
+            if point.active and point.colour == EMPTY:
+                region = point.territory_recursion(player)
+                if region.alive:
+                    territory.extend([p for p in region.points if p.colour != player])
+        for point in self:
+            point.active = True
+        return territory
+        
 
-        for string in strings:
-            string.alive = True
-      
+@total_ordering
+class Result:
+    """The optimal result and moves."""
+    
+    def __init__(self, value, heuristic=False, depth=None):
+        self.value: float = value    # The obtained value
+        self.heuristic: bool = heuristic    # Whether the value is heuristic
+        self.depth = depth    # The depth which was searched
+        self.children: dict[tuple, "Result"] = {}
+        # The optimal continuations indexed by moves
+        self.parent = None    # The parent result
 
+        if isinf(self.value):     # The infinities are made absolute
+            if self.value > 0:    # so as to yield valid comparisons
+                self.heuristic = False
+            else:
+                self.heuristic = True
+
+    def __neg__(self) -> "Result":
+        """Negate the value, retain children."""
+        negative = Result(-self.value, self.heuristic)
+        negative.children = self.children
+        return negative
+
+    def __eq__(self, other) -> bool:
+        """Whether the values and heuristic qualities are the same.
+
+        Infinities diregard heuristic value."""
+        if not isinstance(other, Result):
+            return NotImplemented
+        return self.value == other.value and self.heuristic == other.heuristic
+
+    def __lt__(self, other) -> bool:
+        """Compare the values.
+
+        Non-heuristic values always dominate heuristic ones.
+        """
+        if not isinstance(other, Result):
+            return NotImplemented
+        return (self.heuristic and not other.heuristic or
+                self.heuristic == other.heuristic and self.value < other.value)
+
+    def symmetric(self, symmetry: tuple[tuple, int], m: int, n: int) -> "Result":
+        """Return a result with the symmetry un-applied, recursively."""
+        mapping, switch = symmetry
+        reflect_i, reflect_j, swap_ij = mapping
+        result = Result(self.value, self.heuristic)
+        for move in self.children:
+            if move is None:
+                result.children[None] = self.children[None].symmetric(symmetry, m, n)
+                continue
+            i, j = move
+            if swap_ij:
+                i, j = j, i
+            k = i if not reflect_i else m - i - 1
+            l = j if not reflect_j else n - j - 1
+            result.children[(k, l)] = self.children[move].symmetric(symmetry, m, n)
+        return result
+
+    
 class Board:
     """Board state during the game.
 
     Contains information about the stone layout (Grid object),
     prisoner counts and game-specific states (ko, pass).
     """
-    dictionary = {}    # Dictionary of board states for which the score was computed
     
-    def __init__(self, grid, ko=None, prisoners=[0, 0], passes=0):
-        self.grid: "Grid" = grid    # The stone layout on the board
+    def __init__(self, grid, ko=None, prisoners={BLACK: 0, WHITE: 0}, passes=0):
+        self.grid: Grid = grid    # The stone layout on the board
         self.ko: tuple[int] = ko    # Coordinates of the ko intersection (if it exists)
-        self.prisoners: list[int] = prisoners    # Black's and White's prisoners, respectively
+        self.prisoners: dict[int, int] = prisoners
+        # Black's and White's prisoners, respectively
         self.passes: int = passes    # The number of successive prior passes
         
-        self.territory: list[set] = [set(), set()]    # Black's and White's territory points
-        self.undecided: set = set()    # The points left to fight over
-        self.score: int = None    # The game result upon perfect play (Black - White)
-        self.solution: list = []    # The optimal moves for this position
-        self.children: dict = {}    # Board states reachable by moves from this one
+        self.scored = False    # Whether to display the territory
+        
+        self.territory: dict[int, list] = {BLACK: [], WHITE: []}
+        # Black's and White's territory points
+        self.undecided: list = []    # The points left to fight over
+        self.score: dict[int, int] = {BLACK: 0, WHITE: 0}    # The score of each player
+        self.children: dict[tuple, dict[tuple, "Board"]] = {BLACK: {}, WHITE: {}}
+        # Board states reachable by moves, indexed by the coordinates (or None for passing)
 
-    def tuple(self, player: int) -> tuple:
-        """Return an immutable object capturing the board-state and current player."""
-        # The prisoner counts are not relevant for perfect play
+    def tuple(self) -> tuple:
+        """Return an immutable object capturing the board-state."""
         grid = tuple(point.colour for point in self.grid)
-        return (grid, self.ko, self.passes, player)
+        return (grid, self.ko, self.prisoners[BLACK] - self.prisoners[WHITE], self.passes)
+
+    def symmetric(self) -> dict[tuple, "Board"]:
+        """Return a dictionary of the symmetric variants of the board.
+
+        The boards are indexed by symmetry type: rotation, reflection and colour switch.
+        """
+        symmetric = {}
+        # The symmetries are given by relecting coordinates, swapping them
+        # and switching players; the first three are a 3-tuple of boolean values,
+        # switching is denoted by -1 if switch, else 1
+        swaps = [False, True] if self.grid.m == self.grid.n else [False]
+        mappings = list(product([False, True], [False, True], swaps))
+        # Oblong boards cannot swap coordinates
+        for symmetry in product(mappings, [1, -1]):
+            grid = self.grid.copy(symmetry)
+            prisoners = {symmetry[1]*p: _ for p, _ in self.prisoners.items()}
+            symmetric[symmetry] = Board(grid, self.ko, prisoners, self.passes)
+        return symmetric
 
     def move(self, player: int, i: int, j: int, ignore_ko: bool) -> "Board":
         """Attempt to place a new stone on the board.
@@ -255,11 +477,7 @@ class Board:
             if neighbour.colour == -player:
                 neighbour_string = neighbour.find_string()
                 if not neighbour_string.liberties:
-                    if player == BLACK:
-                        prisoners[0] += len(neighbour_string)
-                    else:
-                        prisoners[1] += len(neighbour_string)
-                        
+                    prisoners[player] += len(neighbour_string)
                     if len(neighbour_string) == 1:
                         # Ko candidate if only one stone was captured
                         ko = (neighbour.i, neighbour.j)
@@ -291,160 +509,586 @@ class Board:
         prisoners = self.prisoners.copy()
 
         point = grid[i][j]
-        colour = point.colour
-        point.colour = EMPTY
         if take_prisoner:
-            if colour == BLACK:
-                prisoners[1] += 1
-            else:
-                prisoners[0] += 1
-
+            prisoners[-point.colour] += 1
+        point.colour = EMPTY
+            
         return Board(grid, None, prisoners)
 
-    def pass_turn(self):
+    def pass_turn(self) -> "Board":
         """Return a copy of itself after passing a turn."""
-        return Board(self.grid, prisoners=self.prisoners, passes=min(self.passes + 1, 2))
+        return Board(self.grid, prisoners=self.prisoners, passes=(self.passes + 1))
 
-    def _find_life(self, player: int):
-        """For the player's uncapturable strings on the board, set their status to alive.
+    def _find_life(self, fast: bool) -> list[tuple]:
+        """For the uncapturable strings on the board, set their status to alive.
 
-        Aside from unconditional life, also check life by miai
+        If the fast parameter is false, also check life by miai
         (two different moves lead to unconditional life).
-        Retain information about stone strings.
+        Return the dame (points which are not territory, but of no value).
+        Retain stone strings.
         """
-        self.grid.uncapturable(player)
-        for point in self.grid:
-            if point.active and point.colour == player:
-                string = point.string
-                for p in string:
-                    p.active = False
-                if not string.alive:
-                    candidate = False
-                    for p in self.grid:
-                        if p.colour == EMPTY:
-                            try:
-                                new_board = self.move(player, p.i, p.j, True)
-                            except PlacementError:
-                                continue
+        b_strings, b_eyes = self.grid.uncapturable(BLACK)
+        w_strings, w_eyes = self.grid.uncapturable(WHITE)
+        eye_points = []
+        dame = []
+        for eye in b_eyes + w_eyes:
+            eye_points.extend([(l.i, l.j) for l in eye.liberties])
+        for point in filter(lambda p: p.colour == EMPTY, self.grid):
+            if (all(n.string.alive for n in point.adjacent if n.colour != EMPTY) and
+                (EMPTY in [n.colour for n in point.adjacent] or point.dame()) and
+                all(n.dame() for n in point.adjacent if n.colour == EMPTY)):
+                dame.append((point.i, point.j))
+
+        if not fast:
+            for player, strings in [(BLACK, b_strings), (WHITE, w_strings)]:
+                representatives = [(s.points[0].i, s.points[0].j) for s in strings]
+                for point in filter(lambda p: p.colour == EMPTY and
+                                    (p.i, p.j) not in eye_points and
+                                    (p.i, p.j) not in dame, self.grid):
+                    try:
+                        new_board = self.move(player, point.i, point.j, True)
+                    except PlacementError:
+                        continue
+                    if new_board.grid[point.i][point.j].isolated():
+                        continue
+                    for string, representative in zip(strings, representatives):
+                        if not string.alive:
+                            i, j = representative
                             new_board.grid.uncapturable(player)
-                            if new_board.grid[point.i][point.j].string.alive:
-                                if candidate:
+                            new_string = new_board.grid[i][j].string
+                            if new_string.alive:
+                                if string.alive is None:
                                     string.alive = True
-                                    break
                                 else:
-                                    candidate = True
-        for point in self.grid:
-            point.active = True
+                                    string.alive = None    # Candidate for life
+                for string in strings:
+                    if string.alive is None:
+                        string.alive = False
+        return dame
+                                                                
+    def grade(self, fast: bool = False):
+        """Determine the territories, undecided points and score of both players.
 
-    def grade(self) -> int:
-        """Determine the territories and undecided points, return the score of both players.
-
-        The scoring assumes that strings are dead unless obviously alive,
-        seki is not considered.
+        If the fast parameter is true, the computation is less thorough.
         Destroy string information.
         """
-        territory = [set(), set()]
-        placed_prisoners = [0, 0]
-        self._find_life(BLACK)
-        self._find_life(WHITE)
-        for i, player in [(0, BLACK), (1, WHITE)]:
-            for point in self.grid:
-                if point.active and point.colour == EMPTY:
-                    region = point.eye_recursion(player)
-                    if region.alive:
-                        territory[i] |= {(p.i, p.j) for p in region}
-                        placed_prisoners[i] += len({p for p in region if p.colour != EMPTY})
-            for point in self.grid:
-                point.active = True
+        placed_prisoners = {}
+        dame = self._find_life(fast)
+        for player in [BLACK, WHITE]:
+            territory = self.grid.find_territory(player)
+            self.territory[player] = [(p.i, p.j) for p in territory]
+            placed_prisoners[player] = [p.colour for p in territory].count(-player)
+            self.score[player] = (len(self.territory[player]) + placed_prisoners[player]
+                                  + self.prisoners[player])
+
+        self.undecided = [(p.i, p.j) for p in self.grid if
+                          p.colour == EMPTY and (p.i, p.j) not in dame and
+                          (p.i, p.j) not in self.territory[BLACK] + self.territory[WHITE]]
 
         for point in self.grid:
             point.string = None
 
-        self.territory = territory
-        self.undecided = {(p.i, p.j) for p in self.grid if p.colour == EMPTY
-                          and (p.i, p.j) not in territory[0] | territory[1]}
-        score = [len(territory[i]) + placed_prisoners[i] + self.prisoners[i]
-                 for i in range(2)]
-        
-        return score
+    def solve(self, starting_player: int, history: list["Board"],
+              dict_graded: dict[tuple, tuple]) -> Result:
+        """Attempt to determine the optimal result and moves.
 
-    def build_tree(self, player: int):
-        """Create the tree of possible continuations."""
-        if self.passes == 2:
-            return
-        can_move = False
-        for i, j in self.undecided:
+        Return None if the situation is too complex,
+        else return the solution as a Result object remembering the principal variation.
+        Defines functions for finding children of the boards, ordering moves,
+        board evaluation and search for easier handling.
+        Employs iterative deepening negamax with alpha-beta pruning,
+        transposition tables, symmetry lookups and heuristics.
+        """
+        
+        def make_children(board: "Board", player: int, fast_grading: bool):
+            """Find the boards reachable from this one with the player to move"""
+            nonlocal dict_graded
+
+            new_board = board.pass_turn()
+            if new_board.tuple() in dict_graded:
+                new_board = dict_graded[new_board.tuple()][0]
+            else:
+                # Grading is the same after a pass
+                new_board.score = board.score
+                new_board.undecided = board.undecided.copy()
+                dict_graded[new_board.tuple()] = (new_board, fast_grading)
+            board.children[player][None] = new_board    # Passing is denoted by None
+            
+            for i, j in board.undecided:
+                try:
+                    new_board = board.move(player, i, j, False)
+                except PlacementError:
+                    continue
+                if new_board.tuple() in dict_graded:
+                    new_board = dict_graded[new_board.tuple()][0]
+                else:
+                    point = new_board.grid[i][j]
+                    if (fast_grading and new_board.prisoners == board.prisoners and
+                        point.isolated()):
+                        # The new stone did not change territory and did not capture;
+                        # this can result only in new dame
+                        new_board.score = board.score
+                        new_board.undecided = board.undecided.copy()
+                        new_board.undecided.remove((i, j))
+                    else:
+                        new_board.grade(True)
+                    fast = True
+                    if not fast_grading:
+                        undecided = new_board.undecided
+                        new_board.grade()
+                        fast = (undecided == new_board.undecided)
+                        # Fast grading can be applied if all territory is unconditional
+                    dict_graded[new_board.tuple()] = (new_board, fast)
+                board.children[player][(i, j)] = new_board
+
+        def order_children(board: "Board", player: int, depth: int):
+            """Order the board's children according to the heuristics.
+
+            The order is: transposition moves, pass, killer moves,
+            and the rest sorted by the history heuristic.
+            """
+            nonlocal dict_solved, heur_killer, heur_history
+            children = board.children[player]
+            
+            stored = ([] if board.tuple() not in dict_solved[player] else
+                      dict_solved[player][board.tuple()].children.keys())
+            k_moves = [m for m in heur_killer[depth] if m in children]
+            h_moves = sorted([m for m in children if m is not None],
+                             key=(lambda m: -heur_history[player][m[0]][m[1]]))
+
+            moves = []
+            for move_list in [stored, k_moves, [None], h_moves]:
+                moves.extend([m for m in move_list if m not in moves])
+            
+            board.children[player] = {m: children[m] for m in moves}
+
+        def evaluate(board: "Board") -> float:
+            """Calculate the heuristic value of the board."""
+            value = {}
+            for player in [BLACK, WHITE]:
+                value[player] = board.score[player]    # Reward captures and territory
+                value[player] += (0.2 * [p.colour for p in board.grid].count(player)
+                                  + 0.2 * [player in [l.colour for l in p.adjacent]
+                                           for p in board.grid].count(True))
+                # Play stones with liberties
+                
+                m, n = board.grid.m, board.grid.n
+                for p in filter(lambda p: p.colour == player, board.grid):
+                    if any((n.i, n.j) in board.undecided for n in p.adjacent):
+                        # Do not play moves on the edges and corners
+                        if 0 in {p.i, p.j} or p.i == m or p.j == n:
+                            value[player] -= 0.1
+                        if (p.i, p.j) in {(0, 0), (0, n), (m, 0), (n, 0)}:
+                            value[player] -= 0.2
+            return value[BLACK] - value[WHITE]
+            
+        def negamax(board: "Board", alpha: Result, beta: Result,
+                    player: int, depth: int) -> Result:
+            """Find the (perhaps provisional) value of the board.
+
+            Return a Result object capturing the value.
+            Implements the fixed-depth negamax algortihm with alpha-beta pruning.
+            """
+            nonlocal history, dict_graded, max_depth, end, complexity
+            nonlocal dict_solved, heur_killer, heur_history
+            complexity += 1
+            
+            history.append(board)
+            colour = 1 if player == BLACK else -1
+            if board.passes == 2:
+                history.pop()
+                return Result(colour*(board.score[BLACK] - board.score[WHITE]), False)
+            repetition = Board.test_repetition(history)
+            if repetition is not None:
+                history.pop()
+                # Draw by repetition is treated as heuristic
+                # because it is assumed that optimal play ends with two passes
+                return Result(colour*repetition, True)
+            if depth == max_depth:    # Heuristic result
+                end = False
+                history.pop()
+                return Result(colour*evaluate(board), True)
+
+            if not board.children[player]:
+                fast_grading = dict_graded[board.tuple()][1]
+                make_children(board, player, fast_grading)
+
+            if board.tuple() in dict_solved[player]:
+                stored = dict_solved[player][board.tuple()]
+                if stored.depth >= max_depth - depth:    # Result beyond current max_depth
+                    history.pop()
+                    return stored
+            if board.grid.m * board.grid.n < 25 and depth < 6:
+                # Symmetry lookups for small boards
+                for symmetry, b in board.symmetric().items():
+                    if symmetry == ((False, False, False), 1):    # Identity
+                        continue
+                    p = symmetry[1]*player
+                    if b.tuple() in dict_solved[p]:
+                        stored = dict_solved[p][b.tuple()]
+                        if stored.depth >= max_depth - depth:
+                            history.pop()
+                            return stored.symmetric(symmetry, board.grid.m, board.grid.n)
+
+            order_children(board, player, depth)
+
+            options = {}
+            best = Result(-inf)
+            for move, child in board.children[player].items():
+                r = -negamax(child, -beta, -alpha, -player, depth + 1)
+                options[move] = r
+                best = max(best, r)
+                if best > beta:    # Cutoff
+                    if move not in heur_killer[depth]:
+                        pass
+                        heur_killer[depth] = [heur_killer[depth][1], move]
+                    if move is not None:
+                        i, j = move
+                        heur_history[player][i][j] += depth ** 2
+                    break
+                alpha = max(alpha, best)
+            history.pop()
+
+            result = Result(best.value, best.heuristic, max_depth - depth)
+            result.children = {m: r for m, r in options.items() if r == best}
+            dict_solved[player][board.tuple()] = result
+            return result
+
+
+        self.grade(True)
+        undecided = self.undecided
+        self.grade()
+        dict_graded[self.tuple()] = (self, (undecided == self.undecided))
+        if len(self.undecided) > MAX_UNDECIDED:    # Too complex
+            return None
+
+        complexity = 0    # The total number of negamax calls
+        dict_solved: dict[int, dict[tuple, Result]] = {BLACK: {}, WHITE: {}}
+        # The transposition table for each player
+        heur_killer: list[list] = []    # Two last killer moves for each depth
+        heur_history: dict[int, list[list[float]]] = {player:
+            [[0 for _ in range(self.grid.n)] for __ in range(self.grid.m)]
+                                                      for player in [BLACK, WHITE]}
+        
+        # The history heuristic for each player
+        
+        max_depth = 0
+        end = False
+        while not end:
+            end = True
+            max_depth += 1
+            heur_killer.append([None, None])
+            negamax(self, Result(-inf), Result(inf), starting_player, 0)
+            
+            if (max_depth > MAX_DEPTH or
+                ((len(dict_solved[BLACK]) + len(dict_solved[WHITE]))
+                      *self.grid.m*self.grid.n > MAX_COMPLEXITY)):
+                return None
+            
+        return dict_solved[starting_player][self.tuple()]
+
+    @staticmethod
+    def test_repetition(history: list["Board"]) -> float:
+        """Test whether the stone placement has been repeated.
+
+        Search only for long cycles (at least 3 moves).
+        If repetition occurs, compute which player has gained more prisoners
+        since the last occurence of the position and return
+        infinity if Black, minus infinity if White and 0 if neither (as strings).
+        ELse return None.
+        """
+        if not history:
+            return None
+        
+        current = history[-1]
+        if len(history) > 3:
+            for board in reversed(history[:-3]):
+                if board.grid == current.grid:     
+                    difference = {player: current.prisoners[player] - board.prisoners[player]
+                                  for player in [BLACK, WHITE]}
+                    if difference[BLACK] > difference[WHITE]:
+                        return inf
+                    elif difference[BLACK] < difference[WHITE]:
+                        return -inf
+                    else:
+                        return 0.
+        return None
+    
+
+class GameModel:
+    """Internal model of the game."""
+    
+    def __init__(self):
+        self.dict_graded: dict[tuple, tuple[Board, bool]] = {}
+        # Dictionary of the graded board-states and whether the grading was fast
+        
+        self.history: list[Board] = []    # Past board-states
+        self.undo_history: list[Board] = []    # Undone board-states
+        self.solution: Result = None    # The stored principal variation
+        
+        self.player: int = EMPTY    # Current player
+        
+    def new_board(self, rows: int, columns: int):
+        """Create a new, empty board of the given dimensions.
+
+        Forget the graded positions.
+        Cannot be undone.
+        """
+        self.dict_graded = {}
+        self.history = [Board(Grid(rows, columns))]
+        self.undo_history = []
+        self.solution = None
+
+    def reset_prisoners(self):
+        """Reset the number of prisoners of both players.
+
+        Cannot be undone.
+        """
+        board = self.history[-1]
+        self.history = [Board(board.grid, ko=board.ko)]
+        self.undo_history = []
+
+    def placement(self, i: int, j: int, ignore_ko: bool, take_prisoner: bool):
+        """Attempt to place or delete a stone at the given position.
+
+        Show the solution if in the principal variation, else forget it.
+        """
+        if self.player == EMPTY:
+            self.history.append(self.history[-1].erase(i, j, take_prisoner))
+        else:
+            self.history.append(self.history[-1].move(self.player, i, j, ignore_ko))
+            if self.solution is not None:
+                for child in self.solution.children.values():
+                    child.parent = self.solution
+                if (i, j) in self.solution.children:
+                    self.solution = self.solution.children[(i, j)]
+                else:
+                    self.solution = None
+        self.undo_history = []
+
+    def pass_turn(self):
+        """Pass a turn without placing a stone."""
+        self.history.append(self.history[-1].pass_turn())
+        self.undo_history = []
+        if self.solution is not None:
+            for child in self.solution.children.values():
+                child.parent = self.solution
+            if None in self.solution.children:
+                self.solution = self.solution.children[None]
+
+    def undo(self):
+        """Return to the previous board-state.
+
+        Remember the previous solution if possible.
+        """
+        self.undo_history.append(self.history.pop())
+        if self.solution is not None:
+            self.solution = self.solution.parent
+
+    def redo(self):
+        """Return to the previously undone board-state.
+
+        Forget the solution.
+        """
+        self.history.append(self.undo_history.pop())
+        self.solution = None
+
+    def test_superko(self) -> list[tuple]:
+        """Try all moves to determine whether position repetition can occur.
+
+        Return a list of the found moves.
+        """
+        board = self.history[-1]
+        superko = []
+        for i, j in product(range(board.grid.m), range(board.grid.n)):
             try:
-                new_board = self.move(player, i, j, False)
-                can_move = True
+                self.history.append(board.move(self.player, i, j, False))
             except PlacementError:
                 continue
-            if new_board.tuple(-player) in Board.dictionary:
-                new_board = Board.dictionary[new_board.tuple(-player)]
-            else:
-                Board.dictionary[new_board.tuple(-player)] = new_board
-                new_board.grade()
-                new_board.territory = [set(), set()]
-                new_board.build_tree(-player)
-            self.children[(i, j)] = new_board
-        if not can_move:
-            new_board = self.pass_turn()
-            if self.passes == 0:
-                if new_board.tuple(-player) in Board.dictionary:
-                    new_board = Board.dictionary[new_board.tuple(-player)]
-                else:
-                    Board.dictionary[new_board.tuple(-player)] = new_board
-                    new_board.grade()
-                    new_board.territory = [set(), set()]
-                    new_board.build_tree(-player)
-            self.children[None] = new_board
-
-    def minmax(self, player: int, history: list["Board"], komi: float):
-        """Recursively find the optimal moves from the given positions."""
-        if not self.children:
-            score = self.grade()
-            self.score = score[0] - score[1] - komi
-            history.pop()
-            return
-        repetition = test_repetition(history)
-        if repetition is not None:
-            self.score = repetition
-            history.pop()
-            return
-        for child in self.children.values():
-            history.append(child)
-            child.minmax(-player, history, komi)
-        history.pop()
+            if Board.test_repetition(self.history) is not None:
+                superko.append((i, j))
+            self.history.pop()
+        return superko
         
-        if player == BLACK:
-            best_result = max(child.score for child in self.children.values())
+
+class GameController:
+    """Controller communicating between the model and the view."""
+    
+    def __init__(self, model, view):
+        self.model: "GameModel" = model
+        self.view: "GameView" = view
+
+    def update_view(self):
+        """Update the view according to the current board-state.
+
+        Display the solution if it is known.
+        If the number of prisoners were to exceed the maximum value,
+        display the maximum value (the real number is retained in the model).
+        """
+        board = self.model.history[-1]
+        self.view.goban.update(board)
+        if not self.view.sandbox.get():
+            self.view.goban.superko(self.model.test_superko())
+        for player in [BLACK, WHITE]:
+            prisoners = board.prisoners[player]
+            if prisoners <= MAX_PRISONERS:
+                view.prisoners[player].set(prisoners)
+            else:
+                view_prisoners[player].set(MAX_PRISONERS)
+        if self.model.solution is not None:
+            moves = [m for m in self.model.solution.children.keys() if m is not None]
+            self.view.goban.solve(moves)
+
+    def new_board(self, rows: int, columns: int):
+        """Create a new, empty board of the given dimensions.
+
+        If the players alternate, Black plays first.
+        """
+        self.model.new_board(rows, columns)
+        if self.view.alternation.get() == ALTERNATE:
+            self.model.player = BLACK
+        
+    def placement(self, i: int, j: int):
+        """Attempt to place or delete a stone at the given position.
+
+        If in Sandbox mode, ko and repetition testing is to be ignored.
+        The latter is also ignored if it is not enabled.
+        If the board state was repeated, end playing sequence. 
+        If the players alternate, change player.
+        """
+        try:
+            self.model.placement(i, j, self.view.sandbox.get(), self.view.take_prisoners.get())
+        except PlacementError:
+            return
+        
+        if not self.view.sandbox.get() and self.view.test_repetition.get():
+            repetition = self.test_repetition()
+            if repetition is not None:
+                if repetition:
+                    self.set_start()
+                else:    # The move was cancelled
+                    self.model.history.pop()
+                    return
+                
+        if self.view.alternation.get() == ALTERNATE:
+            self.model.player *= -1
+        self.update_view()
+
+    def control(self, action: str):
+        """Attempt to modify the model according to the given action.
+
+        Possible actions are prisoner reset, pass, undo and redo.
+        If two passes in succession have been made (in the current playing sequence),
+        end the playing sequence and display the result.
+        Except prisoner reset, change player if they alternate.
+        """
+        if action == "Reset prisoners":
+            self.model.reset_prisoners()
         else:
-            best_result = min(child.score for child in self.children.values())
-        self.score = best_result
-        self.solution = [move for move in self.children
-                         if self.children[move].score == best_result]
+            match action:
+                case "Pass" | "p":
+                    self.model.pass_turn()
+                    if not self.view.sandbox.get() and self.model.history[-1].passes == 2:
+                        self.score()
+                        self.set_start()
+                case "Undo" | "BackSpace":
+                    if len(self.model.history) > 1:
+                        self.model.undo()
+                    else:
+                        return
+                case "Redo" | "r":
+                    if self.model.undo_history:
+                        self.model.redo()
+                    else:
+                        return
+            if self.view.alternation.get() == ALTERNATE:
+                self.model.player *= -1
+        self.update_view()
 
+    def score(self):
+        """Score the board and display the result."""
+        board = self.model.history[-1]
+        board.grade()
+        board.scored = True
+        self.update_view()
 
-def test_repetition(history: list["Board"]) -> int:
-    """Test whether the stone placement has been repeated.
+        score = board.score
+        komi = float(self.view.score_menu.sp_komi.get())
+        if komi.is_integer():
+            komi = int(komi)
+        difference = score[BLACK] - score[WHITE] - komi
+        if difference > 0:
+            text = f"Black wins by {difference} points"
+        elif difference < 0:
+            text = f"White wins by {-difference} points"
+        else:
+            text = "Tie"
+        messagebox.showinfo("Game end", parent=self.view.root,
+                            message=text,
+                            detail = f"Black: {score[BLACK]}, White: {score[WHITE] + komi}")
 
-    Search only for long cycles (at least 3 moves).
-    If repetition occurs, compute which player has gained more prisoners
-    since the last occurence of the position and return
-    infinity if Black, minus infinity if White and 0 if neither. ELse return None.
-    """
-    current_board = history[-1]
-    if len(history) > 3:
-        for board in reversed(history[:-3]):
-            if board.grid == current_board.grid:     
-                difference = [i-j for i, j in zip(current_board.prisoners, board.prisoners)]
-                if difference[0] > difference[1]:
-                    return float("inf")
-                elif difference[0] < difference[1]:
-                    return float("-inf")
-                else:
-                    return 0
-    return None
+    def solve(self):
+        """Find the optimal moves in the current position and display them.
+
+        If the situation is too complex, display an error message.
+        """
+        if self.model.solution is not None:    # Already computed
+            return
+        
+        board = self.model.history[-1]
+        solution = board.solve(self.model.player, self.model.history,
+                               self.model.dict_graded,)
+        if solution is None:
+            messagebox.showerror("Error", parent=self.view.root, message="Too complex")
+            return
+        if None in solution.children:    # The best move is a pass
+                messagebox.showinfo("Best move", parent=self.view.root, message="Pass")
+        self.model.solution = solution
+        self.update_view()
+
+    def test_repetition(self) -> bool:
+        """Test whether the stone placement has been repeated.
+
+        Tests only up to the first un-undoable action (i. e. in the current playing sequence).
+        If repetition occurs, show which player (if any) has won
+        according to the long cycle rule and ask whether to continue.
+        If the user cancels the action, return False, if not, return True. Else return None.
+        """
+        repetition = Board.test_repetition(self.model.history)
+        if repetition is None:
+            return None
+        match isinf(repetition), repetition > 0:
+            case True, True:
+                text = "Black wins by prisoner difference"
+            case True, False:
+                text = "White wins by prisoner difference"
+            case False, _:
+                text = "No result by prisoner difference"
+        return messagebox.askokcancel("Repetition", parent=self.view.root,
+                                      message="Long cycle", detail=text)
+    
+    def set_player(self):
+        """Set the player according to the current alternation choice.
+
+        If the players start alternating, the previous option is retained
+        as the player who plays first, unless in stone erasure mode;
+        in such case, Black plays first.
+        """
+        alternation = self.view.alternation.get()
+        if alternation == ALTERNATE:
+            if self.model.player == EMPTY:
+                self.model.player = BLACK
+        else:
+            self.model.player = alternation
+
+    def set_start(self):
+        """Reset history and start a new playing sequence from the current board."""
+        board = self.model.history[-1]
+        self.model.history, self.model.undo_history = [board], []
+        self.model.solution = None
+        board.ko = None
+        board.passes = 0
+        board.scored = False
 
 
 class Goban(tk.Canvas):
@@ -458,7 +1102,7 @@ class Goban(tk.Canvas):
         self.n: int = columns    # Board dimensions
 
         self.redraw()
-
+           
     def redraw(self):
         """Redraw the underlying grid according to the current attributes."""
         self.delete(tk.ALL)
@@ -472,30 +1116,48 @@ class Goban(tk.Canvas):
                              self.size*(j+1/2) + 5, self.size*(self.m-1/2) + 5,
                              fill="black")
 
+        # Highlight certain intersections for easier orientation
+        if self.m == 1:
+            hoshi = [(0, j) for j in range(self.n)]
+        elif self.n == 1:
+            hoshi = [(i, 0) for i in range(self.m)]
+        else:
+            hoshi = list(product(Goban.hoshi(self.m), Goban.hoshi(self.n)))
+            if (0 not in {self.m % 2, self.n % 2} and (self.m > 5 or self.n > 5)):
+                hoshi.append((self.m//2, self.n//2))
+        for i, j in hoshi:
+            self.create_oval(self.size*(j+0.4) + 5, self.size*(i+0.4) + 5,
+                             self.size*(j+0.6) + 5, self.size*(i+0.6) + 5,
+                             outline="black", fill="black")
+            
     def update(self, board: Board):
         """Update the board display according to a Board object."""
-        self.delete("stone", "ko", "territory", "solution")
-        for i in range(self.m):
-            for j in range(self.n):
-                c = board.grid[i][j].colour
-                if c != EMPTY:
-                    if c == BLACK:
-                        colour = "black"
-                    elif c == WHITE:
-                        colour = "white"
-                    self.create_oval(self.size*j + 5 + 1, self.size*i + 5 + 1,
-                                     self.size*(j+1) + 5 - 1, self.size*(i+1) + 5 - 1,
-                                     outline="black", fill=colour, tag="stone")
+        self.delete("stone", "ko", "territory", "superko", "solution")
+        for i, j in product(range(self.m), range(self.n)):
+            c = board.grid[i][j].colour
+            if c != EMPTY:
+                colour = "black" if c == BLACK else "white"
+                self.create_oval(self.size*j + 5 + 1, self.size*i + 5 + 1,
+                                 self.size*(j+1) + 5 - 1, self.size*(i+1) + 5 - 1,
+                                 outline="black", fill=colour, tag="stone")
         if board.ko is not None:
             i, j = board.ko
             self.create_rectangle(self.size*(j+0.3) + 5, self.size*(i+0.3) + 5,
                                   self.size*(j+0.7) + 5, self.size*(i+0.7) + 5,
                                   outline="black", tag="ko")
-        for k, player, colour in [(0, BLACK, "black"), (1, WHITE, "white")]:
-            for i, j in board.territory[k]:
-                self.create_rectangle(self.size*(j+0.3) + 5, self.size*(i+0.3) + 5,
-                                      self.size*(j+0.7) + 5, self.size*(i+0.7) + 5,
-                                      outline="black", fill=colour, tag="territory")
+        if board.scored:
+            for player, colour in [(BLACK, "black"), (WHITE, "white")]:
+                for i, j in board.territory[player]:
+                    self.create_rectangle(self.size*(j+0.3) + 5, self.size*(i+0.3) + 5,
+                                          self.size*(j+0.7) + 5, self.size*(i+0.7) + 5,
+                                          outline="black", fill=colour, tag="territory")
+
+    def superko(self, moves):
+        """Draw the superko points."""
+        for i, j in moves:
+            self.create_oval(self.size*(j+0.3) + 5, self.size*(i+0.3) + 5,
+                             self.size*(j+0.7) + 5, self.size*(i+0.7) + 5,
+                             outline="black", tag="superko")
 
     def solve(self, solution: list):
         """Display the suggestions for the best next plays."""
@@ -503,8 +1165,24 @@ class Goban(tk.Canvas):
         for i, j in solution:
             self.create_oval(self.size*j + 5 + 1, self.size*i + 5 + 1,
                              self.size*(j+1) + 5 - 1, self.size*(i+1) + 5 - 1,
-                             width = 2, outline="grey", dash=(4, 5),
-                             tag="solution")
+                             width = 2, outline="grey", dash=(4, 5), tag="solution")
+
+    @staticmethod
+    def hoshi(length: int) -> list[int]:
+        """Find the lines for hoshi to be on. Length is the perpendicular dimension."""
+        lines = []
+        if length > 7:
+            if length < 12:
+                l = 2
+            elif length < 25:
+                l = 3
+            else:
+                l = 4
+            lines = [l, length - l - 1]
+        if length > 3 and length % 2 == 1 and length != 9:
+            lines.append(length//2)
+        return lines
+
 
 class SizeMenu(tk.Frame):
     """Menu for adjusting the board parameters."""
@@ -552,7 +1230,7 @@ class SizeMenu(tk.Frame):
     def validate(self, entry: str) -> bool:
         """Validate the board dimensions entry."""
         return (entry == "" or
-                (entry.isdigit() and int(entry) > 0 and int(entry) <= MAX_LENGTH))
+                (entry.isdigit() and not entry.startswith("0") and int(entry) <= MAX_LENGTH))
     
     def toggle_columns(self):
         """Set the columns option depending on whether the board is square.
@@ -578,8 +1256,7 @@ class SizeMenu(tk.Frame):
             messagebox.showerror("Error", parent=self.view.root,
                                  message="Board too large")
             return False
-        else:
-            return True
+        return True
 
     def resize(self):
         """Change the size of the displayed board if it fits."""
@@ -595,10 +1272,10 @@ class SizeMenu(tk.Frame):
         """
         if (rows := self.sp_rows.get()) and (columns := self.sp_columns.get()):
             size = self.sc_size.get()
-            if self.size_fits(size, int(rows), int(columns)):
-                if messagebox.askokcancel("New board", parent=self.view.root,
-                                          message="Create new board?"):
-                    self.view.new_board(size, int(rows), int(columns))
+            if (self.size_fits(size, int(rows), int(columns)) and
+                messagebox.askokcancel("New board", parent=self.view.root,
+                                       message="Create new board?")):
+                self.view.new_board(size, int(rows), int(columns))
         else:
             messagebox.showerror("Error", parent=self.view.root,
                                  message="Grid parameters not specified")
@@ -647,22 +1324,20 @@ class ModeMenu(tk.Frame):
     def toggle_mode(self):
         """Set the current playing mode."""
         self.view.set_mode()
-        
-        btn_score = self.view.score_menu.btn_score
-        btn_solve = self.view.score_menu.btn_solve
+
+        play_widgets = [self.cbtn_repetition,
+                        self.view.score_menu.btn_score, self.view.score_menu.btn_solve]
         if self.view.sandbox.get():
             for widget in self.fr_alternation.winfo_children():
-                widget.configure(state=tk.NORMAL)
-            self.cbtn_prisoners.configure(state=tk.DISABLED)
-            self.cbtn_repetition.configure(state=tk.DISABLED)
-            btn_score.configure(state=tk.DISABLED)
-            btn_solve.configure(state=tk.DISABLED)
+                if widget != self.cbtn_prisoners:
+                    widget.configure(state=tk.NORMAL)
+            for widget in play_widgets:
+                widget.configure(state=tk.DISABLED)
         else:
             for widget in self.fr_alternation.winfo_children():
                 widget.configure(state=tk.DISABLED)
-            self.cbtn_repetition.configure(state=tk. NORMAL)
-            btn_score.configure(state=tk.NORMAL)
-            btn_solve.configure(state=tk.NORMAL)
+            for widget in play_widgets:
+                widget.configure(state=tk.NORMAL)
 
     def toggle_alternation(self):
         """Set the current alternation option."""
@@ -673,7 +1348,6 @@ class ModeMenu(tk.Frame):
         else:
             self.cbtn_prisoners.configure(state=tk.DISABLED)
         
-
 
 class ScoreMenu(tk.Frame):
     """Menu for adjusting komi and evaluating the board position."""
@@ -699,231 +1373,13 @@ class ScoreMenu(tk.Frame):
         self.btn_solve.grid(row=3)
 
     def validate(self, entry: str) -> bool:
-        """Validate the komi entry."""
+        """Validate the komi entry, as a half-integer."""
+        value = entry.removeprefix("-")
         return (entry == "" or
-                (entry.removeprefix("-").removesuffix(".5").removesuffix(".0").isdigit() and
-                 float(entry) >= -MAX_KOMI and float(entry) <= MAX_KOMI))
+                ((value.removesuffix(".5").isdigit() or value.removesuffix(".0").isdigit()) and
+                 (not value.startswith("0") or value.startswith("0.") or value == "0") and
+                 float(value) <= MAX_KOMI))
     
-
-class GameModel:
-    """Internal model of the game."""
-    
-    def __init__(self):
-        self.history: list[Board] = []    # Past board-states
-        self.undo_history: list[Board] = []    # Undone board-states
-        self.player: int = EMPTY    # Current player
-        
-    def new_board(self, rows: int, columns: int):
-        """Create a new, empty board of the given dimensions.
-
-        Forget the solved positions.
-        Cannot be undone.
-        """
-        Board.dictionary = {}
-        self.history = [Board(Grid(rows, columns))]
-        self.undo_history = []
-
-    def reset_prisoners(self):
-        """Reset the number of prisoners of both players.
-
-        Cannot be undone.
-        """
-        board = self.history[-1]
-        self.history = [Board(board.grid, ko=board.ko)]
-        self.undo_history = []
-
-    def placement(self, i: int, j: int, ignore_ko: bool, take_prisoner: bool):
-        """Attempt to place or delete a stone at the given position."""
-        if self.player == EMPTY:
-            self.history.append(self.history[-1].erase(i, j, take_prisoner))
-        else:
-            self.history.append(self.history[-1].move(self.player, i, j, ignore_ko))
-        self.undo_history = []
-
-    def pass_turn(self):
-        """Pass a turn without placing a stone."""
-        self.history.append(self.history[-1].pass_turn())
-        self.undo_history = []
-
-    def undo(self):
-        """Return to the previous board-state."""
-        self.undo_history.append(self.history.pop())
-
-    def redo(self):
-        """Return to the previously undone board-state."""
-        self.history.append(self.undo_history.pop())
-        
-
-class GameController:
-    """Controller communicating between the model and the view."""
-    
-    def __init__(self, model, view):
-        self.model: "GameModel" = model
-        self.view: "GameView" = view
-
-    def update_view(self):
-        """Update the view according to the current board-state.
-
-        If the number of prisoners were to exceed the maximum value,
-        display the maximum value (the real number is retained in the model).
-        """
-        board = self.model.history[-1]
-        self.view.goban.update(board)
-        for prisoners, view_prisoners in zip(board.prisoners, self.view.prisoners):
-            if prisoners <= MAX_PRISONERS:
-                view_prisoners.set(prisoners)
-            else:
-                view_prisoners.set(MAX_PRISONERS)
-    
-    def test_repetition(self) -> bool:
-        """Test whether the stone placement has been repeated.
-
-        Tests only up to the first un-undoable action (i. e. in the current playing sequence).
-        If repetition occurs, show which player (if any) has won
-        according to the long cycle rule and ask whether to continue.
-        If the user cancels the action, return False, if not, return True. Else return None.
-        """
-        repetition = test_repetition(self.model.history)
-        if repetition is None:
-            return None
-        else:
-            if repetition > 0:
-                text = "Black wins by prisoner difference"
-            elif repetition < 0:
-                text = "White wins by prisoner difference"
-            else:
-                text = "No result by prisoner difference"
-            return messagebox.askokcancel("Repetition", parent=self.view.root,
-                                              message="Long cycle", detail=text)
-
-    def new_board(self, rows: int, columns: int):
-        """Create a new, empty board of the given dimensions.
-
-        If the players alternate, Black plays first.
-        """
-        self.model.new_board(rows, columns)
-        if self.view.alternation.get() == ALTERNATE:
-            self.model.player = BLACK
-        
-    def placement(self, i: int, j: int):
-        """Attempt to place or delete a stone at the given position.
-
-        If in Sandbox mode, ko and repetition testing is to be ignored.
-        The latter is also ignored if it is not enabled.
-        If the board state was repeated, end playing sequence. 
-        If the players alternate, change player.
-        """
-        try:
-            self.model.placement(i, j, self.view.sandbox.get(), self.view.take_prisoners.get())
-        except PlacementError:
-            return
-        
-        if not self.view.sandbox.get() and self.view.test_repetition.get():
-            repetition = self.test_repetition()
-            if repetition is not None:
-                if repetition:
-                    self.set_start()
-                else:    # The move was cancelled
-                    self.model.history.pop()
-                    return
-                
-        if self.view.alternation.get() == ALTERNATE:
-            self.model.player *= -1
-        self.update_view()
-
-    def control(self, action: str):
-        """Attempt to modify the model according to the given action.
-
-        Possible actions are prisoner reset, pass, undo and redo.
-        If two passes in succession have been made (in the current playing sequence),
-        end the playing sequence and display the result.
-        Except prisoner reset, change player if they alternate.
-        """
-        if action == "Reset prisoners":
-            self.model.reset_prisoners()
-        else:
-            if action in {"Pass", "p"}:
-                self.model.pass_turn()
-                if not self.view.sandbox.get() and self.model.history[-1].passes == 2:
-                    self.score()
-                    self.set_start()
-            elif action in {"Undo", "BackSpace"}:
-                if len(self.model.history) > 1:
-                    self.model.undo()
-                else:
-                    return
-            elif action in {"Redo", "r"}:
-                if self.model.undo_history:
-                    self.model.redo()
-                else:
-                    return
-                    
-            if self.view.alternation.get() == ALTERNATE:
-                self.model.player *= -1
-        self.update_view()
-
-    def score(self):
-        """Score the board and display the result."""
-        score = self.model.history[-1].grade()
-        self.update_view()
-        komi = float(self.view.score_menu.sp_komi.get())
-        if komi.is_integer():
-            komi = int(komi)
-        score[1] += komi
-        difference = score[0] - score[1]
-        if difference > 0:
-            text = f"Black wins by {difference} points"
-        elif difference < 0:
-            text = f"White wins by {-difference} points"
-        else:
-            text = "Tie"
-        messagebox.showinfo("Game end", parent=self.view.root,
-                            message=text,
-                            detail = f"Black: {score[0]}, White: {score[1]}")
-
-    def solve(self):
-        """Attempt to find the optimal moves in the current position.
-
-        If there are too many undecided points, display an error message.
-        """
-        board = self.model.history[-1]
-        if board.tuple(self.model.player) in Board.dictionary:
-            board = Board.dictionary[board.tuple(self.model.player)]
-        else:
-            board.grade()
-            board.territory = [set(), set()]
-            if len(board.undecided) > MAX_UNDECIDED:
-                messagebox.showerror("Error", parent=self.view.root, message="Too complex")
-                return
-            Board.dictionary[board.tuple(self.model.player)] = board
-            board.build_tree(self.model.player)
-            komi = float(self.view.score_menu.sp_komi.get())
-            board.minmax(self.model.player, self.model.history, komi)
-            self.model.history.append(board)
-        if None in board.solution:    # The best move is a pass
-            messagebox.showinfo("Best move", parent=self.view.root, message="Pass")
-        else:
-            self.view.goban.solve(board.solution)
-    
-    def set_player(self):
-        """Set the player according to the current alternation choice.
-
-        If the players start alternating, the previous option is retained
-        as the player who plays first, unless in stone erasure mode;
-        in such case, Black plays first.
-        """
-        alternation = self.view.alternation.get()
-        if alternation == ALTERNATE:
-            if self.model.player == EMPTY:
-                self.model.player = BLACK
-        else:
-            self.model.player = alternation
-
-    def set_start(self):
-        """Reset history and start a new playing sequence from the current board."""
-        self.model.history, self.model.undo_history = [self.model.history[-1]], []
-        self.model.history[-1].passes = 0
-
 
 class GameView:
     """Game graphics, passes user inputs to the controller."""
@@ -933,7 +1389,7 @@ class GameView:
         self.controller: "GameController" = controller
 
         # The displayed numbers of prisoners
-        self.prisoners = [tk.IntVar(root, 0), tk.IntVar(root, 0)]
+        self.prisoners = {BLACK: tk.IntVar(root, 0), WHITE: tk.IntVar(root, 0)}
         
         self.sandbox = tk.BooleanVar(root, False)    # The playing mode
         self.alternation = tk.IntVar(root, ALTERNATE)    # The alternation option
@@ -960,11 +1416,11 @@ class GameView:
 
         fr_prisoners = tk.Frame(fr_main)
         tk.Label(fr_prisoners, text="Prisoners:").pack(side=tk.LEFT)
-        for colour, var in zip(["black", "white"], self.prisoners):
+        for player, colour in [(BLACK, "black"), (WHITE, "white")]:
             stone = tk.Canvas(fr_prisoners, width=30, height=30)
-            stone.create_oval(5, 5, 25, 25, outline="black", fill=colour)
+            stone.create_oval(5, 5, 25, 25, fill=colour)
             stone.pack(side=tk.LEFT)
-            tk.Label(fr_prisoners, width=3, textvariable=var).pack(side=tk.LEFT)  
+            tk.Label(fr_prisoners, width=3, textvariable=self.prisoners[player]).pack(side=tk.LEFT)  
         btn = tk.Button(fr_prisoners, text="Reset prisoners", takefocus=False)
         btn.bind("<ButtonRelease-1>", self.control)
         btn.pack(side=tk.LEFT)
@@ -1003,6 +1459,8 @@ class GameView:
         """Upon a click outside of an entry field, set keyboard focus to the goban."""
         if event.widget not in {self.size_menu.sp_rows, self.size_menu.sp_columns,
                                 self.score_menu.sp_komi}:
+            if not self.score_menu.sp_komi.get():
+                self.score_menu.sp_komi.insert(0, "0")
             self.goban.focus_set()
 
     def new_board(self, size: int, rows: int, columns: int):
