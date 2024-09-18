@@ -689,9 +689,8 @@ class Board:
             Return a Result object capturing the value.
             Implements the fixed-depth negamax algortihm with alpha-beta pruning.
             """
-            nonlocal history, dict_graded, max_depth, end, complexity
+            nonlocal history, dict_graded, max_depth, end
             nonlocal dict_solved, heur_killer, heur_history
-            complexity += 1
             
             history.append(board)
             colour = 1 if player == BLACK else -1
@@ -762,7 +761,6 @@ class Board:
         if len(self.undecided) > MAX_UNDECIDED:    # Too complex
             return None
 
-        complexity = 0    # The total number of negamax calls
         dict_solved: dict[int, dict[tuple, Result]] = {BLACK: {}, WHITE: {}}
         # The transposition table for each player
         heur_killer: list[list] = []    # Two last killer moves for each depth
