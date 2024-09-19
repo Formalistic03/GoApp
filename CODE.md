@@ -6,7 +6,7 @@ Je užita jednoduchá MCV architektura, tedy rozdělení programu na části mod
 
 Na počátku se nachází konstanty pro účely programu.
 
-Na konci se nachází hlavní část spouštící program s výchozí deskou 9×9 o velikosti políčka 36 v módu `Play` s komi 6,5.
+Na konci se nachází hlavní část spouštící program s výchozí deskou 9 × 9 o velikosti políčka 36 v módu `Play` s komi 6, 5.
 
 ## GoError
 
@@ -22,7 +22,7 @@ Třída souvislých skupin průsečíků (spojených podél linek desky; objekty
 
 ## Grid
 
-Třída rozložení kamenů na desce (objektů `Point` v matici). Umožňuje nalézt bezpodmíněčně živé skupiny na desce (Využitím [Bensonova algoritmu](https://webdocs.cs.ualberta.ca/~games/go/seminar/2002/020717/benson.pdf)[^1]) a území obou hráčů.
+Třída rozložení kamenů na desce (objektů `Point` v matici). Umožňuje nalézt bezpodmíněčně živé skupiny na desce (využitím Bensonova algoritmu[^1]) a území obou hráčů.
 
 ## Result
 
@@ -30,15 +30,11 @@ Třída výsledků pro vyhledávání řešení pozice. Zaznamenává hodnotu, h
 
 ## Board
 
-Třída stavů desky během hry. Pamatuje si již vyřešené pozice ve slovníku. Obsahuje informaci o tom, jak jsou rozloženy kameny (objekt `Grid`), kolik mají hráči zajatců, kde se nachází ko a kolik předchozích tahů bylo pasováno; dále také může uchovávat území hráčů, nerozhodnutou oblast a dceřinné pozice (pro vyhledávání). Umožňuje provádění tahů (resp. testování jejich legality), podrobnější hledání živých skupin a hledání nejlepšího tahu.
+Třída stavů desky během hry. Pamatuje si již vyřešené pozice ve slovníku. Obsahuje informaci o tom, jak jsou rozloženy kameny (objekt `Grid`), kolik mají hráči zajatců, kde se nachází ko a kolik předchozích tahů bylo pasováno; dále také může uchovávat území hráčů, nerozhodnutou oblast a dceřinné pozice (pro vyhledávání). Umožňuje provádění tahů (resp. testování jejich legality), podrobnější hledání živých skupin, hledání nejlepšího tahu a vyhodnocování podle pravidla o dlouhém cyklum jestli nedošlo k opakování pozice.
 
 ### Board.solve
 
 Metoda na hledání optimálního řešení. Definuje několik pomocných funkcí. Postup je z valné části přejatý z programu MIGOS[^2]. Je použit algoritmus minmaxu (implementovaného jako negamax) s iterativním prohlubováním a alfa-beta ořezáváním. Pro dané vyhledávání se udržuje slovník s prozatímně naleznými řešeními (transpoziční tabulka). Pro malé desky se v malé hloubce vyhledávají také symetrické pozice. Jsou implementovány heuristika killer tahů a heuristika historie. Desky jsou vyhodnocovány heusristickou funkci odměňující nadějnější tahy. Možné tahy jsou omezeny na tahy mimo rozhodnutá území, takže se na deskách průběžně hodnotí život; již takto vyhodnocené jsou ukládány v modelu. Pokud je území bepodmíněčné, běží vyhodnocování ve zkráceném režimu pro zrychlení (nezkouší se život přes miai).
-
-### Board.test_repetition
-
-Funkce, která obdrží historii stavů desky a vyhodnotí podle pravidla o dlouhém cyklu, jestli nedošlo k opakování.
 
 ## GameModel
 
@@ -68,5 +64,5 @@ Menu pro nastavování komi a vyhodnocování pozice na desce jako třída.
 
 Pohled – grafická realizace programu v Tkinteru, která předává uživatelské vstupy kontroleru. Vykreslí hlavní okno aplikace s objektem Goban, počty zajatců, ovládacími tlačítky a instancemi `SizeMenu`, `ModeMenu` a `ScoreMenu`.
 
- [^1]: BENSON, David B. Life in the game of Go. Information Sciences. 1976, vol. 10, no. 2, s. 17–29. ISSN 0020-0255.
- [^2]: VAN DER WERF, Erik C. D.; VAN DEN HERIK, H. Jaap a UITERWIJK, Jos W. H. M. Solving Go on Small Boards. Journal of the International Computer Games Association. 2003, vol. 26, no. 2, s. 92–107.
+ [^1]: BENSON, David B. Life in the game of Go. _Information Sciences_. 1976, vol. 10, no. 2, s. 17–29. ISSN 0020-0255.
+ [^2]: VAN DER WERF, Erik C. D.; VAN DEN HERIK, H. Jaap a UITERWIJK, Jos W. H. M. Solving Go on Small Boards. _Journal of the International Computer Games Association_. 2003, vol. 26, no. 2, s. 92–107.
