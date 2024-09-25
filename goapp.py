@@ -4,6 +4,7 @@ from functools import total_ordering
 from itertools import product
 from math import inf, isinf
 
+
 # Constants for point occupation and alternation options
 EMPTY: int = 0    # Empty intersection, also deleting stones
 BLACK: int = 1    # Black stone, also only Black plays
@@ -23,12 +24,17 @@ MAX_GOBAN_SIZE = 700    # Maximum size of the displayed goban
 MAX_PRISONERS = 999    # Maximum displayed number of prisoners
 MAX_KOMI = 99.5    # Maximum value of komi
 
+
 class GoError(Exception):
     """Exception class for handling Go-related errors."""
-
+    
     
 class PlacementError(GoError):
     """GoError subclass for rule-violating stone placement (or erasure)."""
+
+
+class ComplexityError(GoError):
+    """GoError subclass signifying the situation is too complex to be solved."""
 
 
 class Point:
@@ -88,19 +94,19 @@ class Point:
                 region.alive = False
         return region
     
-    def find_string(self, region: int = EMPTY) -> "String":
+    def find_string(self, is_region: int = EMPTY) -> "String":
         """Find the point's string (region).
 
-        If the region option is EMPTY, find the string of intersections with the same colour.
+        If the is_region option is EMPTY, find the string of intersections with the same colour.
         If it is BLACK or WHITE, find the region enclosed by the player containing the point,
         but if the point is occupied by the player, return None.
         """
-        if region == EMPTY:
+        if is_region == EMPTY:
             string = self._string_recursion()
             for liberty in string.liberties:
                 liberty.active = True
-        if region != EMPTY:
-            string = self._region_recursion(region)
+        if is_region != EMPTY:
+            string = self._region_recursion(is_region)
         if string is not None:
             for point in string:
                 point.active = True
@@ -223,7 +229,7 @@ class String:
         """Return the number of the string's points."""
         return len(self.points)
 
-    def vital(self, string, player):
+    def vital(self, string: "String", player: int):
         """Check whether the region is an eye of the player's string."""
         for liberty in self.liberties:
             if string not in [p.string for p in liberty.adjacent if p.colour == player]:
@@ -330,7 +336,7 @@ class Grid(list):
         return ([s for s in strings if not s.alive and len(s.liberties) > 1],
                 [e for e in eyes if e.alive])
 
-    def find_territory(self, player) -> list["Point"]:
+    def find_territory(self, player: int) -> list["Point"]:
         """Return a list of the points which are territory of the player.
 
         The obvisouly alive strings need to have been determined.
@@ -356,7 +362,7 @@ class Result:
     def __init__(self, value, heuristic=False, depth=None):
         self.value: float = value    # The obtained value
         self.heuristic: bool = heuristic    # Whether the value is heuristic
-        self.depth = depth    # The depth which was searched
+        self.depth: int = depth    # The depth which was searched
         self.children: dict[tuple, "Result"] = {}
         # The optimal continuations indexed by moves
         self.parent = None    # The parent result
@@ -401,7 +407,7 @@ class Result:
                 result.children[None] = self.children[None].symmetric(symmetry, m, n)
                 continue
             i, j = move
-            if swap_ij:
+            if swap_ij:    # Swapping coordinates must be undone first
                 i, j = j, i
             k = i if not reflect_i else m - i - 1
             l = j if not reflect_j else n - j - 1
@@ -592,11 +598,11 @@ class Board:
               dict_graded: dict[tuple, tuple]) -> Result:
         """Attempt to determine the optimal result and moves.
 
-        Return None if the situation is too complex,
+        Raise ComplexityError if the situation is too complex,
         else return the solution as a Result object remembering the principal variation.
         Defines functions for finding children of the boards, ordering moves,
         board evaluation and search for easier handling.
-        Employs iterative deepening negamax with alpha-beta pruning,
+        Employs iterative-deepening negamax with alpha-beta pruning,
         transposition tables, symmetry lookups and heuristics.
         """
         
@@ -759,7 +765,7 @@ class Board:
         self.grade()
         dict_graded[self.tuple()] = (self, (undecided == self.undecided))
         if len(self.undecided) > MAX_UNDECIDED:    # Too complex
-            return None
+            raise ComplexityError
 
         dict_solved: dict[int, dict[tuple, Result]] = {BLACK: {}, WHITE: {}}
         # The transposition table for each player
@@ -767,7 +773,6 @@ class Board:
         heur_history: dict[int, list[list[float]]] = {player:
             [[0 for _ in range(self.grid.n)] for __ in range(self.grid.m)]
                                                       for player in [BLACK, WHITE]}
-        
         # The history heuristic for each player
         
         max_depth = 0
@@ -781,8 +786,8 @@ class Board:
             if (max_depth > MAX_DEPTH or
                 ((len(dict_solved[BLACK]) + len(dict_solved[WHITE]))
                       *self.grid.m*self.grid.n > MAX_COMPLEXITY)):
-                return None
-            
+                raise ComplexityError
+                
         return dict_solved[starting_player][self.tuple()]
 
     @staticmethod
@@ -933,6 +938,7 @@ class GameController:
                 view.prisoners[player].set(prisoners)
             else:
                 view_prisoners[player].set(MAX_PRISONERS)
+                
         if self.model.solution is not None:
             moves = [m for m in self.model.solution.children.keys() if m is not None]
             self.view.goban.solve(moves)
@@ -1030,18 +1036,17 @@ class GameController:
 
         If the situation is too complex, display an error message.
         """
-        if self.model.solution is not None:    # Already computed
-            return
-        
-        board = self.model.history[-1]
-        solution = board.solve(self.model.player, self.model.history,
-                               self.model.dict_graded,)
-        if solution is None:
-            messagebox.showerror("Error", parent=self.view.root, message="Too complex")
-            return
-        if None in solution.children:    # The best move is a pass
-                messagebox.showinfo("Best move", parent=self.view.root, message="Pass")
-        self.model.solution = solution
+        if self.model.solution is None:
+            board = self.model.history[-1]
+            try:
+                solution = board.solve(self.model.player, self.model.history,
+                                       self.model.dict_graded,)
+            except ComplexityError:
+                messagebox.showerror("Error", parent=self.view.root, message="Too complex")
+                return
+            self.model.solution = solution
+        if None in self.model.solution.children:    # The best move is a pass
+            messagebox.showinfo("Best move", parent=self.view.root, message="Pass")
         self.update_view()
 
     def test_repetition(self) -> bool:
@@ -1055,12 +1060,12 @@ class GameController:
         repetition = Board.test_repetition(self.model.history)
         if repetition is None:
             return None
-        match isinf(repetition), repetition > 0:
-            case True, True:
+        match str(repetition):
+            case "inf":
                 text = "Black wins by prisoner difference"
-            case True, False:
+            case "-inf":
                 text = "White wins by prisoner difference"
-            case False, _:
+            case "0":
                 text = "No result by prisoner difference"
         return messagebox.askokcancel("Repetition", parent=self.view.root,
                                       message="Long cycle", detail=text)
@@ -1086,7 +1091,6 @@ class GameController:
         self.model.solution = None
         board.ko = None
         board.passes = 0
-        board.scored = False
 
 
 class Goban(tk.Canvas):
@@ -1150,7 +1154,7 @@ class Goban(tk.Canvas):
                                           self.size*(j+0.7) + 5, self.size*(i+0.7) + 5,
                                           outline="black", fill=colour, tag="territory")
 
-    def superko(self, moves):
+    def superko(self, moves: list[tuple]):
         """Draw the superko points."""
         for i, j in moves:
             self.create_oval(self.size*(j+0.3) + 5, self.size*(i+0.3) + 5,
@@ -1475,13 +1479,13 @@ class GameView:
         self.goban.redraw()
         self.controller.update_view()
 
-    def placement(self, event):
+    def placement(self, event: tk.Event):
         """Attempt to place (or delete) a stone where the user clicked on the goban."""
         i, j = (event.y - 5)//self.goban.size, (event.x - 5)//self.goban.size
         if i >= 0 and i < self.goban.m and j >= 0 and j < self.goban.n:
             self.controller.placement(i, j)
 
-    def control(self, event):
+    def control(self, event: tk.Event):
         """Handle button and key presses controlling the board-state."""
         if event.type == "5":    # Button click (and release)
             action = event.widget.cget("text")
