@@ -10,7 +10,7 @@ Na konci se nachází hlavní část spouštící program s výchozí deskou 9�
 
 ## GoError
 
-Třída výjimek pro účely programu. Má podtřídu `PlacementError`, která signalizuje nelegální či nemožné položení/vzetí kamene.
+Třída výjimek pro účely programu. Má podtřídy `PlacementError`, která signalizuje nelegální či nemožné položení/vzetí kamene, a `ComplexityError`, která signalizuje přílišnou složitost výpočtu.
 
 ## Point
 
@@ -34,7 +34,7 @@ Třída stavů desky během hry. Pamatuje si již vyřešené pozice ve slovník
 
 ### Board.solve
 
-Metoda na hledání optimálního řešení. Definuje několik pomocných funkcí. Postup je z valné části přejatý z programu MIGOS[^2]. Je použit algoritmus minmaxu (implementovaného jako negamax) s iterativním prohlubováním a alfa-beta ořezáváním. Pro dané vyhledávání se udržuje slovník s prozatímně naleznými řešeními (transpoziční tabulka). Pro malé desky se v malé hloubce vyhledávají také symetrické pozice. Jsou implementovány heuristika killer tahů a heuristika historie. Desky jsou vyhodnocovány heusristickou funkci odměňující nadějnější tahy. Možné tahy jsou omezeny na tahy mimo rozhodnutá území, takže se na deskách průběžně hodnotí život; již takto vyhodnocené jsou ukládány v modelu. Pokud je území bepodmíněčné, běží vyhodnocování ve zkráceném režimu pro zrychlení (nezkouší se život přes miai).
+Metoda na hledání optimálního řešení. Definuje několik pomocných funkcí. Postup je z valné části přejatý z programu MIGOS van der Werfa _et al_[^2]. Je použit algoritmus minmaxu (implementovaného jako negamax) s iterativním prohlubováním a alfa-beta ořezáváním. Pro dané vyhledávání se udržuje slovník s prozatímně naleznými řešeními (transpoziční tabulka). Pro malé desky se v malé hloubce vyhledávají také symetrické pozice. Jsou implementovány heuristika killer tahů a heuristika historie. Desky jsou vyhodnocovány heusristickou funkci odměňující nadějnější tahy. Možné tahy jsou omezeny na tahy mimo rozhodnutá území, takže se na deskách průběžně hodnotí život; již takto vyhodnocené jsou ukládány v modelu. Pokud je území bepodmíněčné, běží vyhodnocování ve zkráceném režimu pro zrychlení (nezkouší se život přes _miai_).
 
 ## GameModel
 
